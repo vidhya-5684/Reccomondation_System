@@ -1,0 +1,291 @@
+---
+title: "Building a Recommendation System"
+author: "Vidhya Sasidharan Nair"
+date: "8/26/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = F,cache = T,eval = T)
+#read_chunk('~/Data_Science/HarvardX-DS/MovieLens.R')
+```
+```{r, include=FALSE,eval=T}
+#source('~/Data_Science/HarvardX-DS/MovieLens.R', local = knitr::knit_global())
+sys.source("~/Data_Science/HarvardX-DS/MovieLens.R", envir = knitr::knit_global())
+```
+## Introduction
+
+Recommender systems are algorithms aimed at suggesting relevant items to users (items being movies to watch, text to read, products to buy, or anything else depending on industries).E-commerce and retail companies are leveraging the power of data and boosting sales by implementing recommender systems on their websites. Recommender systems aim to predict users’ interests and recommend product items that quite likely are interesting for them. They are among the most powerful machine learning systems that online retailers implement to drive sales. Recommendations typically speed up searches and make it easier for users to access the content they’re interested in. Data required for recommender systems stems from explicit user ratings after watching a movie or listening to a song, from implicit search engine queries and purchase histories, or other knowledge about the users/items themselves.  
+
+
+This project aims to build a movie recommendation system using the 'MovieLens' dataset. The recommendation system uses available ratings(from users) to make specific recommendations about the movies. So the ultimate aim would be creating a model that would predict the ratings given by the users with maximum accuracy.
+
+
+The main machine learning challenge about this data is that each outcome has different predictors. Also the variation in the available range of predictors. Eventually, these scenarios make the model building more interesting.
+The structuring of the report is as follows; Initially starts with the exploration of the MovieLens data and understanding predictors and outcome of the models, followed by cleaning of the data. Then analysis and application of different models on the data set and calculating accuracy and error of each model. The analysis would result in the best model with minimum error and maximum accuracy so the Result section would contain the application of the model on the data set and prediction of the ratings.
+
+
+## Method and Analysis
+The movieLens data is collected from the website of the Grouplens research lab at the University of Minnesota. Although the original data contains a huge number of movies and user details, the data we are dealing with only contains 10,000 movies by 72,000 users.
+
+To build an appropriate Algorithm first we have to divide the available data into train and test data. The test data is used for testing the accuracy of the model. So first created a partition and split data into a train set named 'edx' and a test set named 'validation' with the proportion of 90% and 10% respectively. 
+To find out the best model it would be great to split the train data again into two to construct a secondary test data. So that we could verify models with secondary test data and eventually apply the selected model into our primary test set that is 'validation ' set data. So divided the 'edx' set to train set 'edx' and test set 'test_set'. So 'edx' will be used to train the data and 'test_set' for the accuracy test. In this way, we could overcome the overtraining results from repetitive testing of models. 
+
+This section includes the exploration of the data followed by constructing a cleaned data set. The main discussion of this part would be the analysis of different models on the data and calculating errors to measure the accuracy of each model on the data set.
+
+### Data Exploration and Cleaning
+
+The movielens data totally contains 9000055 rows and 6 columns. The first few rows of the dataset looks like:
+```{r,echo=FALSE,eval=T}
+e <- as_tibble(head(edx))
+knitr::kable(e, digits = 4)
+```
+
+As stated earlier the datset contains 6 columns, which are:
+```{r,echo=FALSE,tidy=TRUE}
+
+knitr::kable(as_tibble_col( colnames(edx)), digits = 4)
+```
+
+Of all these columns the rating column is the desired outcome. The  'userId' column provides useful information and details about the movies are given by the 'movieId' and 'title' column'.The rating date is available in 'timestamp' measured in seconds since January 1st, 1970. Each movie is tagged with one or more genres in the genres column. The following section will discuss the details of each column.
+
+
+#### Rating
+
+This column is our desired outcome. The ratings of movies range from 1-5 and it is rounded to the nearest half-integer. The count of each rating is: 
+
+```{r,echo=F,warning=FALSE,message=FALSE}
+rat <- edx %>% group_by(rating) %>% summarise(n= n()) %>% as_tibble()
+knitr::kable(rat, digits = 4)
+  
+```
+The distribution of ratings looks like:
+```{r,fig.align="center", fig.width=4, fig.height=4}
+
+edx %>% 
+  select(rating) %>%
+  ggplot(aes(rating)) +
+  geom_histogram(bins = 10,color = "white") + 
+    ggtitle("Rating Distributions") +
+    xlab("Ratings") +
+    ylab("Number of Ratings") 
+     
+    
+  
+```
+This distribution suggests that the most given rating is '4' and the mean rating is 3.5
+
+
+#### Movies
+There are total 10677 movies in the edx data set. The common intution is that ratings of movies varies depending upon the popularity and commercial success of the movie. We could verify this intution by plotting distribution of ratings of the movies.
+```{r,echo=FALSE,message=FALSE,warning=FALSE,fig.align="center", fig.width=4, fig.height=4}
+edx %>% 
+  group_by(movieId) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(n)) +
+    geom_histogram(color = "white") +
+    scale_x_log10() + 
+    ggtitle("Distribution of Movies")+
+    xlab("Number of Ratings") +
+    ylab("Number of Movies") 
+    
+
+```
+
+The distribution looks symmetric.
+
+#### Users
+
+The total number of distinct users in the edx dataset is 69878. As the variability in the movie ratings, there is variance also in the ratings given by users. Some users are very active and always give ratings for the movies, on the other side some users are not that actively doesn't contribute much to the rating collection.
+
+```{r,warning=F,message=F}
+users <- edx %>% group_by(userId) %>%
+  summarise(n=n()) %>%
+  arrange(n) %>%
+  head() %>% 
+  as_tibble()
+
+knitr::kable(users, digits = 4)
+  
+```
+
+There are 5% users which rated below 20 movies.
+```{r,message=FALSE,fig.align="center", fig.width=4, fig.height=4}
+edx %>% group_by(userId) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(n)) +
+    geom_histogram(color = "white") +
+    scale_x_log10() + 
+    ggtitle("Distribution of Users")+
+    xlab("Number of Ratings") +
+    ylab("Number of Users") 
+  
+
+```
+
+The distribution is slightly right-skewed which means most of the users rated below 100 movies.
+
+#### Genres
+The Genres columns shows different genres the movies included in and single movie can be tagged into multiple genres depending on the movie sketch.The data set contains 797 different combinations of genres. Here is the list of the first six.
+```{r,warning=F,message=FALSE}
+genre <- edx %>% group_by(genres) %>% 
+  summarise(n=n()) %>%
+  head()
+knitr::kable(genre, digits = 4)
+```
+
+This factor can be used as a predictor for the model since the ratings given by the users somehow intrinsically depends upon the genres the movies in.
+
+## Analysis
+
+In this section, we will try different models for predicting the ratings of the movies and calculates Root Mean Square values of each prediction. Finally will find out the best model with optimum RMSE and good accuracy.
+
+
+### A First model: a single value for all ratings
+
+Initially, a simple model can be used in predicting the same rating for all movies regardless of user and movie. The model would assume the mean of the true rating for all movies with all the difference is explained by the random variations. It would look like:
+
+$$Y_{u,i} = \mu + \epsilon_{u,i}$$ 
+
+
+
+where $\mu$ is the true rating for all the movies and $\epsilon_{u,i}$ is the independent error sampled from the distribution centered at 0 and $\mu$. We could predict all the unknown ratings with this mean and calculate the Root Mean Square Value. The RMSE of the model from the calculation is:
+$$RMSE= 1.06$$
+The optimal RMSE expected is below 0.86, so we should improve this RMSE by trying another model.
+For comparison of different models, we could create a table containing RMSE of a different model. 
+
+```{r , echo=FALSE,tidy=TRUE,eval=T}
+
+rmse_results <- tibble(method = "Just the average", RMSE = mean_RMSE)
+
+knitr::kable(rmse_results, digits = 4)
+```
+### Modeling movie effect.
+
+The obvious intuition about movie ratings is that some movies generally rated higher than others. We could easily confirm this intuition using data. So to model this effect, we can modify the previous model with an additional term '$b_i$' called "bias". Since each movie gets one $b_i$, there will be thousands of $b_i$, therefore using the least square method for estimating $b_i$ is not recommended. But looking at the model it is clear that we could compute $b_i$ as the average of $Y_{u,i} - \hat{\mu}$.  
+The estimation of $b_i$ shows the variation very clearly.
+
+```{r , echo=FALSE,eval=T,fig.align="center", fig.width=4, fig.height=4}
+qplot(b_i, data = avg_movies, bins = 10, color = I("black"))
+```
+
+The calculated RMSE using this model is, $$RMSE=0.94$$. The comparison table look like:
+```{r , echo=FALSE,eval=T}
+
+rmse_results <- tibble(method = c("Just the average","Movie Effect"), RMSE = c(mean_RMSE,RMSE_movies))
+
+knitr::kable(rmse_results, digits = 4)
+```
+
+There is an improvement in RMSE, but we have to optimize it for much better value.
+
+### Modeling User Effect.
+
+The variability of movie ratings is not an unique scenario, there is substantial variability across users as well. The histogram of average ratings of users confirms the variabilty,
+
+
+```{r , echo=FALSE, message=FALSE,eval=T,fig.align="center", fig.width=4, fig.height=4}
+edx %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating)) %>% 
+  filter(n()>=100) %>%
+  ggplot(aes(b_u)) + 
+  geom_histogram(bins = 30, color = "black")
+
+
+```
+
+So this variability adds another possibilty of improvememnt of the model with an additional effect $b_u$ called as user-specific effect. The improved model is: $$Y_{u,i} = \mu +b_i + b_u + \epsilon_{u,i}$$.
+Like the movie effect model using least square method for fitting the model is not reccomondable since there would huge number of $b_u$s. Instead the estimation of $b_u$ can be done using $\hat{\mu}$ and $\hat{b_i}$ as the average of $y_{u,i} - \hat{\mu} - \hat{b_i}$
+
+
+The ratings are predicted using these $b_u$s and calculated RMSE of the model. The calculated RMSE is, $$RMSE = 0.85$$.
+The updated comparison table is,
+```{r , echo=FALSE, eval= T}
+
+rmse_results <- tibble(method = c("Just the average","Movie Effect","User effect"), RMSE = c(mean_RMSE,RMSE_movies,User_RMSE))
+
+knitr::kable(rmse_results, digits = 4)
+```
+This RMSE is far better than the RMSE of other models, but we still have scope to optimizing to a better value.
+
+
+
+### Regularization
+
+The main fact we should consider when applying these linear models is the number of ratings acquired by each film is not equal. This discrepancy is the number of rating would contribute uncertainty in the prediction and increase the RMSE of the prediction.
+So the concept of regularization would be useful in this scenario. Regularization permits us to penalize large estimates that are formed using small sample sizes.
+The main idea behind regularization is to constrain the variability of the effect sizes.
+First, consider only the movie effect, and penalized regression would control the total variability of the movie effects. So we would minimize an equation containing least squares and a penalty term, which is :
+$$\frac{1}{N}\sum_{u,i}(y_{u,i}-\mu-b_i)^2 + \lambda\sum_ib_i^2$$
+
+The second term is the penality term which is directly proptional to the b_i, so it gets larger whn many $b_i$s are large. The values of $b_i$ that minimize above equation are : 
+$$ \hat{b_i}(\lambda) = \frac{1}{\lambda+n_i}\sum^{n_i}_{u=1}(Y_{u,i}-\hat{\mu})$$
+where $n_i$ is the number of ratings made for movie i. So far we considered only the movie effecT, but we can use regularization for the estimae the user effect  as well. Then we are minimizing:
+$$\frac{1}{N}\sum_{u,i}(y_{u,i}-\mu-b_i-b_u)^2 + \lambda(\sum_ib_i^2 + \sum_u b_u^2)$$
+The value od $b_u$s that minimize the equation are :
+$$ \hat{b_u}(\lambda) = \frac{1}{\lambda+n_i}\sum^{n_i}_{u=1}(Y_{u,i}-\hat{\mu} - b_i)$$
+Since $\lambda$ is the tuning parameter, we would use a cross-validation method to find the choose the optimum value.
+```{r, fig.align="center", fig.width=4, fig.height=4, fig.cap="Cross validation of lambda"}
+lambdas <- seq(0, 10, 0.25)
+qplot(lambdas,rmsess)
+```
+
+The optimum lambda which results in minimum RMSE is $\lambda=5$.
+
+The calculated RMSE using regiularized effects is:$$RMSE = 0.8641$$
+The updated table of RMSE is:
+```{r , echo=FALSE,eval=T}
+
+rmse_results <- tibble(Method = c("Just the average","Movie Effect","User effect","Regularization"), RMSE = c(mean_RMSE,RMSE_movies,User_RMSE,regular_RMSE))
+
+knitr::kable(rmse_results, digits = 4)
+```
+The RMSE of the Regularization model is better than any other model. Still, we can improve this RMSE by trying various other models.#
+
+
+### Matrix Factorization.
+Matrix factorization is a collaborative filtering algorithm where the user-item interaction matrix is decomposed into two lower-dimensional rectangular matrices. The main idea behind the algorithm is the ratings are based on some hidden factors called latent semantic characteristics of the movies. Raters probably follow some logic where they weight the things they like in a movie (a specific actress or a genre) against things they don’t like (long duration or bad jokes) and then come up with a score.
+
+
+So in the algorithm, the matrix of dimension m$\times$n is divided into two matrices of dimensionality m$\times$k and n$\times$k and the division is such that if we multiply the matrix we will get back the original matrix. So accurate estimation of thse two matrices would give us a new matrix which is very close to the original matrix and with predicted missing ratings. We could decompose the matrix R which contains user data in the row and movie data in the column as $$ R \approx P^TQ $$
+where P and Q are two lower-dimensional rectangular matrixes.
+
+
+To implement the algorithm first we will transform the training dataset into user$\times$movies matrix. Since converting a large amount of data into a matrix consumes a considerable amount of time, the "Recosystem" package which produces a complete solution to the recommendation system by matrix factorization would be helpful.
+The recosystem library has several parameters helping the prediction of the data. As a process, initially the *Reco()* function constructs a model, then tuning of parameters is done by *$tune* method where the selection of best parameters can be accomplished. Further training the model using *train* and exporting the output(P and Q matrixes) using *output*. Finally *predict* would gives us the predicted results.
+
+The RMSE calculated using this method is: $$RMSE = 0.7853 $$.
+The comparison table as:
+```{r , echo=FALSE,eval=TRUE}
+
+rmse_results <- tibble(Method = c("Just the average","Movie Effect","User effect","Regularization","Matrix factorization"), RMSE = c(mean_RMSE,RMSE_movies,User_RMSE,regular_RMSE,RMSE_MF))
+
+knitr::kable(rmse_results, digits = 4)
+```
+Since RMSE of this method much better than other methods we could apply this model to our original edx and validation data set.
+
+## Result
+
+To build a recommendation system we used several methods, but by comparing the RMSE of each method the Matrix factorization method certainly provides lower RMSE compared to others. So we could apply this method to our 'edx' training and 'validation' datasets for predicting the ratings and calculating RMSE for checking the accuracy of the predictions. 
+The calculated RMSE of the predicted ratings are $$RMSE = 0.782 $$
+```{r,echo=FALSE,eval=FALSE}
+RMSE_MF_valid
+```
+
+The RMSE accrued better than the desired RMSE. So we used Matrix Factorization for predicting unknown ratings and the first few rows of best and worst movies are:
+
+```{r}
+knitr::kable(top_movies, digits = 4)
+knitr::kable(bad, digits = 4)
+```
+ 
+ 
+## Conclusion
+Recommendation Systems are the most popular type of machine learning applications that are used in all sectors. They are an improvement over the traditional classification algorithms as they can take many classes of input and provide similarity ranking based algorithms to provide the user with accurate results.
+
+Here we tried to build a recommendation system. For that first, we started with a simple linear model that predicted mean ratings for all the movies and resulted in a much worse RMSE of 1.06. Then included the effect of user and movie variation in the model and with the help of regularization of these effects resulted in an improved RMSE of 0.8641. Finally, we applied the Matrix factorization using the 'Recosystem' library. The accuracy of this method is far better compared to other models and gives the RMSE of 0.785. So far we used a sample of original edx data for the testing model. After realizing the matrix factorization is the best method we applied this model to the edx and validation set and got RMSE of 0.782.
+
